@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-pub fn main(input: File) -> Result<String> {
+pub fn main(input: File) -> Result<()> {
     let lines = BufReader::new(input).lines();
     let lines = lines
         .enumerate()
@@ -12,7 +12,8 @@ pub fn main(input: File) -> Result<String> {
     //let max = totals.max().expect("expected a nonzero maximum");
     // println!("maximum is {max}");
     let tops = totals.sorted_by(|a, b| b.cmp(a)).take(3).sum::<u32>();
-    Ok(format!("total of top 3 is {tops}"))
+    println!("total of top 3 is {tops}");
+    Ok(())
 }
 
 fn totals(lines: impl Iterator<Item = String>) -> impl Iterator<Item = u32> {

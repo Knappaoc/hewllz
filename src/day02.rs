@@ -8,17 +8,18 @@ use std::{
 };
 use tap::Conv;
 
-pub fn main(file: File) -> Result<String> {
+pub fn main(file: File) -> Result<()> {
     let lines = BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(i, r)| -> Result<(usize, String)> {
             Ok((i, r.context(format!("failed to read line {i} of input"))?))
         });
-    let ret = itertools::process_results(lines, |it| run(it))?;
-    ret
+    let ret = itertools::process_results(lines, |it| run(it))??;
+    println!("{ret}");
+    Ok(())
 }
-fn run(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
+pub fn run(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
     let mut sum = 0;
 
     for (i, line) in lines {
