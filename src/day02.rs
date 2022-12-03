@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use num_enum::TryFromPrimitive;
 use std::{
     fs::File,
@@ -5,32 +6,36 @@ use std::{
     ops::{Add, Sub},
     str::FromStr,
 };
-
 use tap::Conv;
-pub fn main() {
-    let file_path = &"resources/day02.txt";
-    let input = File::open(file_path).expect("Failed to open file to read");
-    let lines = BufReader::new(input).lines();
+
+pub fn main(file: File) -> Result<String> {
+    let lines = BufReader::new(file)
+        .lines()
+        .enumerate()
+        .map(|(i, r)| -> Result<(usize, String)> {
+            Ok((i, r.context(format!("failed to read line {i} of input"))?))
+        });
+    let ret = itertools::process_results(lines, |it| run(it))?;
+    ret
+}
+fn run(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
     let mut sum = 0;
 
-    for (i, line) in lines.enumerate().map(|(i, r)| {
-        (
-            i,
-            r.expect(&format!("failed to read line {i} of file {file_path}")),
-        )
-    }) {
+    for (i, line) in lines {
         sum += parse_line(&line)
-            .expect(&format!("could not process line {i}"))
+            .context(format!("could not process line {i}"))?
             .score();
     }
-    println!("{sum}");
+    Ok(format!("{sum}"))
 }
 
-fn parse_line(line: &str) -> Option<(Hand, Outcome)> {
-    let (opp, me) = line.split_once(" ")?;
+fn parse_line(line: &str) -> Result<(Hand, Outcome)> {
+    let (opp, me) = line
+        .split_once(" ")
+        .with_context(|| "could not split by space")?;
     // let pair = (Hand::from_abc(opp)?, Hand::from_xyz(me)?);
-    let pair: (Hand, Outcome) = (opp.parse().ok()?, me.parse().ok()?);
-    Some(pair)
+    let pair: (Hand, Outcome) = (opp.parse()?, me.parse()?);
+    Ok(pair)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, TryFromPrimitive)]
@@ -97,63 +102,59 @@ impl Score for (Hand, Outcome) {
     }
 }
 impl FromStr for Hand {
-    type Err = ();
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "A" => Ok(Hand::Rock),
             "B" => Ok(Hand::Paper),
             "C" => Ok(Hand::Scissors),
-            _ => Err(()),
+            _ => Err(anyhow!("Invalid hand {s}")),
         }
     }
 }
 impl FromStr for Outcome {
-    type Err = ();
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "X" => Ok(Outcome::Lose),
             "Y" => Ok(Outcome::Draw),
             "Z" => Ok(Outcome::Win),
-            _ => Err(()),
+            _ => Err(anyhow!("Invalid outcome {s}")),
         }
     }
 }
 impl Hand {
-    fn from_abc(c: &str) -> Option<Hand> {
-        match c {
-            "A" => Some(Hand::Rock),
-            "B" => Some(Hand::Paper),
-            "C" => Some(Hand::Scissors),
-            _ => None,
-        }
-    }
-    fn from_xyz(c: &str) -> Option<Hand> {
-        match c {
-            "X" => Some(Hand::Rock),
-            "Y" => Some(Hand::Paper),
-            "Z" => Some(Hand::Scissors),
-            _ => None,
-        }
-    }
+    // fn from_abc(c: &str) -> Option<Hand> {
+    //     match c {
+    //         "A" => Some(Hand::Rock),
+    //         "B" => Some(Hand::Paper),
+    //         "C" => Some(Hand::Scissors),
+    //         _ => None,
+    //     }
+    // }
+    // fn from_xyz(c: &str) -> Option<Hand> {
+    //     match c {
+    //         "X" => Some(Hand::Rock),
+    //         "Y" => Some(Hand::Paper),
+    //         "Z" => Some(Hand::Scissors),
+    //         _ => None,
+    //     }
+    // }
     fn fight(self, other: Self) -> Outcome {
         let diff = self.conv::<Modulo<3>>() - other.conv::<Modulo<3>>();
         Outcome::from(diff)
     }
 
-    fn to_beat(&self) -> Self {
-        match self {
-            Hand::Rock => Hand::Paper,
-            Hand::Paper => Hand::Scissors,
-            Hand::Scissors => Hand::Rock,
-        }
-    }
-
+    /// if A = B.rig_against(O)
+    /// A.fight(B) = O
     fn rig_against(self, outcome: Outcome) -> Hand {
         let diff = self.conv::<Modulo<3>>() + outcome.conv::<Modulo<3>>();
         Hand::from(diff)
     }
+    /// if B = A.rig(O)
+    /// A.fight(B) = O
     fn rig(self, outcome: Outcome) -> Hand {
         let diff = self.conv::<Modulo<3>>() - outcome.conv::<Modulo<3>>();
         Hand::from(diff)
@@ -205,9 +206,9 @@ mod tests {
         // assert_eq!(parse_line("A Y"), Some((Hand::Rock, Hand::Paper)));
         // assert_eq!(parse_line("B X"), Some((Hand::Paper, Hand::Rock)));
         // assert_eq!(parse_line("C Z"), Some((Hand::Scissors, Hand::Scissors)));
-        assert_eq!(parse_line("A Y"), Some((Hand::Rock, Outcome::Draw)));
-        assert_eq!(parse_line("B X"), Some((Hand::Paper, Outcome::Lose)));
-        assert_eq!(parse_line("C Z"), Some((Hand::Scissors, Outcome::Win)));
+        assert_eq!(parse_line("A Y").unwrap(), (Hand::Rock, Outcome::Draw));
+        assert_eq!(parse_line("B X").unwrap(), (Hand::Paper, Outcome::Lose));
+        assert_eq!(parse_line("C Z").unwrap(), (Hand::Scissors, Outcome::Win));
     }
     #[test]
     fn test_rig() {
@@ -222,6 +223,20 @@ mod tests {
         assert_eq!(Hand::Rock.rig(Outcome::Draw), Hand::Rock);
         assert_eq!(Hand::Paper.rig(Outcome::Draw), Hand::Paper);
         assert_eq!(Hand::Scissors.rig(Outcome::Draw), Hand::Scissors);
+    }
+    #[test]
+    fn test_rig_against() {
+        assert_eq!(Hand::Scissors.rig_against(Outcome::Win), Hand::Rock);
+        assert_eq!(Hand::Rock.rig_against(Outcome::Win), Hand::Paper);
+        assert_eq!(Hand::Paper.rig_against(Outcome::Win), Hand::Scissors);
+
+        assert_eq!(Hand::Rock.rig_against(Outcome::Lose), Hand::Scissors);
+        assert_eq!(Hand::Paper.rig_against(Outcome::Lose), Hand::Rock);
+        assert_eq!(Hand::Scissors.rig_against(Outcome::Lose), Hand::Paper);
+
+        assert_eq!(Hand::Rock.rig_against(Outcome::Draw), Hand::Rock);
+        assert_eq!(Hand::Paper.rig_against(Outcome::Draw), Hand::Paper);
+        assert_eq!(Hand::Scissors.rig_against(Outcome::Draw), Hand::Scissors);
     }
     #[test]
     fn test_fight_score() {
