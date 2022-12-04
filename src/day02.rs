@@ -1,41 +1,73 @@
 use anyhow::{anyhow, Context, Result};
 use num_enum::TryFromPrimitive;
 use std::{
-    fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     ops::{Add, Sub},
     str::FromStr,
 };
 use tap::Conv;
 
-pub fn main(file: File) -> Result<()> {
+pub fn main(file: impl Read) -> Result<String> {
+    main_02(file)
+}
+/// get the expected score, interpreting the lines as pairs of hands
+fn main_01(file: impl Read) -> Result<String> {
+    let ret = itertools::process_results(get_lines(file), |it| run_01(it))??;
+    println!("{ret}");
+    Ok(ret.to_string())
+}
+/// get the expected score, interpreting the lines as a hand and an expected outcome
+fn main_02(file: impl Read) -> Result<String> {
+    let ret = itertools::process_results(get_lines(file), |it| run_02(it))??;
+    println!("{ret}");
+    Ok(ret.to_string())
+}
+fn get_lines(file: impl Read) -> impl Iterator<Item = Result<(usize, String)>> {
     let lines = BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(i, r)| -> Result<(usize, String)> {
             Ok((i, r.context(format!("failed to read line {i} of input"))?))
         });
-    let ret = itertools::process_results(lines, |it| run(it))??;
-    println!("{ret}");
-    Ok(())
+    lines
 }
-pub fn run(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
+/// get the expected score, interpreting the lines as pairs of hands
+fn run_01(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
     let mut sum = 0;
 
     for (i, line) in lines {
-        sum += parse_line(&line)
-            .context(format!("could not process line {i}"))?
-            .score();
+        let pair: (Hand, Hand) = parse_01(&line).context(format!("could not process line {i}"))?;
+        sum += pair.score();
     }
     Ok(format!("{sum}"))
 }
 
-fn parse_line(line: &str) -> Result<(Hand, Outcome)> {
-    let (opp, me) = line
-        .split_once(" ")
-        .with_context(|| "could not split by space")?;
-    // let pair = (Hand::from_abc(opp)?, Hand::from_xyz(me)?);
-    let pair: (Hand, Outcome) = (opp.parse()?, me.parse()?);
+/// get the expected score, interpreting the lines as a hand and an expected outcome
+fn run_02(lines: impl Iterator<Item = (usize, String)>) -> Result<String> {
+    let mut sum = 0;
+
+    for (i, line) in lines {
+        let pair: (Hand, Outcome) =
+            parse_02(&line).context(format!("could not process line {i}"))?;
+        sum += pair.score();
+    }
+    Ok(format!("{sum}"))
+}
+
+fn parse_01(line: &str) -> Result<(Hand, Hand)> {
+    let (opp, me) = line.split_once(" ").context("could not split by space")?;
+    let pair = (
+        opp.parse().context("parsing first item")?,
+        me.parse().context("parsing second item")?,
+    );
+    Ok(pair)
+}
+fn parse_02(line: &str) -> Result<(Hand, Outcome)> {
+    let (opp, me) = line.split_once(" ").context("could not split by space")?;
+    let pair = (
+        opp.parse().context("parsing first item")?,
+        me.parse().context("parsing second item")?,
+    );
     Ok(pair)
 }
 
@@ -107,9 +139,9 @@ impl FromStr for Hand {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "A" => Ok(Hand::Rock),
-            "B" => Ok(Hand::Paper),
-            "C" => Ok(Hand::Scissors),
+            "A" | "X" => Ok(Hand::Rock),
+            "B" | "Y" => Ok(Hand::Paper),
+            "C" | "Z" => Ok(Hand::Scissors),
             _ => Err(anyhow!("Invalid hand {s}")),
         }
     }
@@ -196,20 +228,44 @@ impl<const N: u8> Add for Modulo<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_line;
+    use crate::day02::main_01;
+    use crate::day02::main_02;
+    use crate::day02::parse_02;
+
     use super::Hand;
     use super::Modulo;
     use super::Outcome;
     use super::Score;
+    use indoc::indoc;
 
+    #[test]
+    fn test_main_01() {
+        let input = indoc!(
+            "A Y
+            B X
+            C Z"
+        );
+        let res = main_01(input.as_bytes()).unwrap();
+        assert_eq!(&*res, "15")
+    }
+    #[test]
+    fn test_main_02() {
+        let input = indoc!(
+            "A Y
+            B X
+            C Z"
+        );
+        let res = main_02(input.as_bytes()).unwrap();
+        assert_eq!(&*res, "12")
+    }
     #[test]
     fn test_full() {
         // assert_eq!(parse_line("A Y"), Some((Hand::Rock, Hand::Paper)));
         // assert_eq!(parse_line("B X"), Some((Hand::Paper, Hand::Rock)));
         // assert_eq!(parse_line("C Z"), Some((Hand::Scissors, Hand::Scissors)));
-        assert_eq!(parse_line("A Y").unwrap(), (Hand::Rock, Outcome::Draw));
-        assert_eq!(parse_line("B X").unwrap(), (Hand::Paper, Outcome::Lose));
-        assert_eq!(parse_line("C Z").unwrap(), (Hand::Scissors, Outcome::Win));
+        assert_eq!(parse_02("A Y").unwrap(), (Hand::Rock, Outcome::Draw));
+        assert_eq!(parse_02("B X").unwrap(), (Hand::Paper, Outcome::Lose));
+        assert_eq!(parse_02("C Z").unwrap(), (Hand::Scissors, Outcome::Win));
     }
     #[test]
     fn test_rig() {

@@ -1,4 +1,10 @@
-#![feature(iter_intersperse, never_type, specialization)]
+#![feature(
+    iter_intersperse,
+    never_type,
+    specialization,
+    iter_array_chunks,
+    iterator_try_reduce
+)]
 
 mod day01;
 mod day02;
@@ -61,10 +67,33 @@ mod app {
                         println!("Error on day {day}: {e}");
                         return;
                     }
-                    ErrorStrategy::Silent => return,
+                    ErrorStrategy::Silent => continue,
                 }
             }
         }
+    }
+}
+pub mod utils {
+    use std::io::{BufRead, BufReader, Read};
+
+    use anyhow::{Context, Result};
+
+    pub fn get_lines_num(file: impl Read) -> impl Iterator<Item = Result<(usize, String)>> {
+        let lines =
+            BufReader::new(file)
+                .lines()
+                .enumerate()
+                .map(|(i, r)| -> Result<(usize, String)> {
+                    Ok((i, r.context(format!("failed to read line {i} of input"))?))
+                });
+        lines
+    }
+    pub fn get_lines(file: impl Read) -> impl Iterator<Item = Result<String>> {
+        let lines = BufReader::new(file)
+            .lines()
+            .enumerate()
+            .map(|(i, r)| r.context(format!("failed to read line {i} of input")));
+        lines
     }
 }
 /*
@@ -222,16 +251,18 @@ mod adapter {
         }
     }
 
-    impl<E: Display> Solution for fn(File) -> Result<(), E> {
+    impl<E: Display> Solution for fn(File) -> Result<String, E> {
         default fn run(&self, file: File) {
-            if let Err(e) = self(file) {
-                eprintln!("error: {e}")
+            match self(file) {
+                Err(e) => eprintln!("error: {e}"),
+                Ok(s) => println!("solution: {s}"),
             }
         }
     }
-    impl Solution for fn(File) {
+    impl Solution for fn(File) -> String {
         fn run(&self, file: File) {
-            self(file)
+            let s = self(file);
+            println!("solution: {s}")
         }
     }
 
